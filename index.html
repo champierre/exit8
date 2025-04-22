@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>8番出口</title>
+  <style>
+    body { margin: 0; overflow: hidden; background-color: #000; }
+    canvas { display: block; }
+    #ui-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      pointer-events: none;
+      font-family: 'Courier New', monospace;
+    }
+    #info {
+      position: absolute;
+      top: 20px;
+      width: 100%;
+      text-align: center;
+      color: white;
+      font-size: 1.5rem;
+      text-shadow: 2px 2px 2px rgba(0,0,0,0.8);
+      background-color: rgba(0,0,0,0.5);
+      padding: 10px;
+    }
+    #timer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      color: white;
+      font-size: 1.2rem;
+      padding: 5px 10px;
+      background-color: rgba(0,0,0,0.5);
+      border-radius: 5px;
+    }
+    #exit-info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #00ff00;
+      font-size: 1.2rem;
+      padding: 5px 10px;
+      background-color: rgba(0,0,0,0.5);
+      border-radius: 5px;
+      font-weight: bold;
+    }
+    .key-guide {
+      position: absolute;
+      bottom: 10px;
+      width: 100%;
+      text-align: center;
+      color: white;
+      font-size: 1rem;
+      background-color: rgba(0,0,0,0.7);
+      padding: 15px 0;
+      line-height: 1.6;
+      border-top: 1px solid rgba(255,255,255,0.2);
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    .pulse {
+      animation: pulse 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui-container">
+    <div id="info" class="pulse">画面クリックでゲームスタート！</div>
+    <div id="timer">00:00</div>
+    <div id="exit-info">出口番号: 0</div>
+    <div class="key-guide">
+      <h2 style="margin-top: 0; color: #00ff00;">【遊び方】</h2>
+      <div style="max-width: 600px; margin: 0 auto;">
+        1. 画面クリックでゲームスタート<br>
+        2. WASD:移動 | マウス:視点操作<br>
+        3. 通路を進み、異変を探す<br>
+        4. <span style="color: #ff6b6b;">異変を見つけたら「B」キーで引き返す</span><br>
+        5. <span style="color: #4ecdc4;">異変がなければ「F」キーで進む</span><br>
+        6. 出口番号8に到達して脱出しよう！
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
