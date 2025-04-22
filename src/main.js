@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { createMaze } from './maze.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -192,9 +193,7 @@ function createExitSign(number) {
   group.add(back);
   
   // Number text
-  const loader = new THREE.FontLoader();
-  // Since loading fonts is async and complex for this example,
-  // we'll use a simple approach with a box for now
+  // Use a simple approach with a box instead of FontLoader
   const numGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.1);
   const numMesh = new THREE.Mesh(numGeometry, exitSignMaterial);
   numMesh.position.z = 0.08;
@@ -277,6 +276,22 @@ function initializeCorridors() {
   currentCorridor = 0;
 }
 
+// Initialize maze (for the simple version)
+function initializeMaze() {
+  // Create a simple maze
+  const mazeWidth = 10;
+  const mazeHeight = 10;
+  const { maze, wallGroup, startPosition, exitPosition } = createMaze(scene, mazeWidth, mazeHeight);
+  
+  // Set player position to start position
+  controls.getObject().position.set(startPosition.x, playerHeight, startPosition.z);
+  
+  // Store exit position for win condition
+  const exitPos = new THREE.Vector3(exitPosition.x, 0, exitPosition.z);
+  
+  return { maze, wallGroup, exitPos };
+}
+
 // Reset the game
 function resetGame() {
   gameStarted = false;
@@ -291,8 +306,18 @@ function resetGame() {
   exitInfoElement.textContent = `出口番号: ${exitNumber}`;
   infoElement.textContent = '画面クリックでゲームスタート！';
   
-  // Initialize corridors
-  initializeCorridors();
+  // Initialize game environment
+  if (useSimpleMaze) {
+    // Remove old maze if exists
+    if (currentMaze && currentMaze.wallGroup) {
+      scene.remove(currentMaze.wallGroup);
+    }
+    // Create new maze
+    currentMaze = initializeMaze();
+  } else {
+    // Initialize corridors for original game
+    initializeCorridors();
+  }
 }
 
 // Handle player's decision
@@ -396,6 +421,10 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Game mode flag - set to true for simple maze version
+const useSimpleMaze = true;
+let currentMaze = null;
+
 // Handle click to start/continue game
 document.addEventListener('click', () => {
   if (!controls.isLocked) {
@@ -405,6 +434,12 @@ document.addEventListener('click', () => {
       startTime = Date.now();
     }
     controls.lock();
+    
+    // Update UI for simple maze version
+    if (useSimpleMaze) {
+      infoElement.textContent = '8番出口を目指して迷路を探索しよう！';
+      exitInfoElement.textContent = '出口を探せ！';
+    }
   }
 });
 
@@ -492,6 +527,44 @@ function isInDecisionZone() {
   return Math.abs(playerZ - targetZ) < 2; // Within 2 units of the decision point
 }
 
+// Check if player reached the exit in simple maze mode
+function checkMazeExit() {
+  if (!currentMaze || !currentMaze.exitPos) return false;
+  
+  const playerPos = controls.getObject().position;
+  const distance = new THREE.Vector2(playerPos.x, playerPos.z)
+    .distanceTo(new THREE.Vector2(currentMaze.exitPos.x, currentMaze.exitPos.z));
+  
+  return distance < 2; // Within 2 units of the exit
+}
+
+// Check if player collides with walls in the maze
+function checkWallCollision(position) {
+  if (!currentMaze || !currentMaze.wallGroup) return false;
+  
+  // Create a bounding box for the player
+  const playerBoundingBox = new THREE.Box3().setFromCenterAndSize(
+    position,
+    new THREE.Vector3(playerRadius * 2, playerHeight, playerRadius * 2)
+  );
+  
+  // Check collision with each wall
+  let collides = false;
+  currentMaze.wallGroup.children.forEach(wall => {
+    if (collides) return; // Skip if already colliding
+    
+    // Create a bounding box for the wall
+    const wallBoundingBox = new THREE.Box3().setFromObject(wall);
+    
+    // Check if the bounding boxes intersect
+    if (playerBoundingBox.intersectsBox(wallBoundingBox)) {
+      collides = true;
+    }
+  });
+  
+  return collides;
+}
+
 // Game loop
 function animate() {
   requestAnimationFrame(animate);
@@ -510,78 +583,140 @@ function animate() {
     // Calculate movement delta
     let moveDelta = new THREE.Vector3(0, 0, 0);
     
-    // Restrict forward/backward movement to the corridor
-    if (movement.forward) {
-      const newZ = controls.getObject().position.z + forward.z * moveSpeed;
-      const corridorBoundary = (currentCorridor + 1) * corridorLength - playerRadius;
-      
-      if (newZ < corridorBoundary) {
+    if (useSimpleMaze) {
+      // Simple maze movement
+      if (movement.forward) {
         moveDelta.add(forward.multiplyScalar(moveSpeed));
       }
-    }
-    
-    if (movement.backward) {
-      const newZ = controls.getObject().position.z - forward.z * moveSpeed;
-      const corridorBoundary = currentCorridor * corridorLength + playerRadius;
       
-      if (newZ > corridorBoundary) {
-        moveDelta.sub(forward.normalize().multiplyScalar(moveSpeed));
+      if (movement.backward) {
+        moveDelta.sub(forward.multiplyScalar(moveSpeed));
       }
-    }
-    
-    // Restrict left/right movement within corridor width
-    if (movement.left || movement.right) {
-      const lateralMove = right.clone().multiplyScalar(moveSpeed * (movement.right ? 1 : -1));
-      const newX = controls.getObject().position.x + lateralMove.x;
       
-      if (Math.abs(newX) < (corridorWidth / 2 - playerRadius)) {
-        moveDelta.add(lateralMove);
+      if (movement.left) {
+        moveDelta.sub(right.multiplyScalar(moveSpeed));
       }
+      
+      if (movement.right) {
+        moveDelta.add(right.multiplyScalar(moveSpeed));
+      }
+      
+      // Apply movement with collision detection
+      if (moveDelta.length() > 0) {
+        const newPosition = controls.getObject().position.clone().add(moveDelta);
+        
+        // Keep player at fixed height
+        newPosition.y = playerHeight;
+        
+        // Check for wall collision
+        if (!checkWallCollision(newPosition)) {
+          // No collision, update position
+          controls.getObject().position.copy(newPosition);
+        } else {
+          // Try moving only on X axis if Z movement caused collision
+          const xOnlyPosition = controls.getObject().position.clone();
+          xOnlyPosition.x += moveDelta.x;
+          
+          if (!checkWallCollision(xOnlyPosition)) {
+            controls.getObject().position.copy(xOnlyPosition);
+          }
+          
+          // Try moving only on Z axis if X movement caused collision
+          const zOnlyPosition = controls.getObject().position.clone();
+          zOnlyPosition.z += moveDelta.z;
+          
+          if (!checkWallCollision(zOnlyPosition)) {
+            controls.getObject().position.copy(zOnlyPosition);
+          }
+        }
+      }
+      
+      // Check if player reached the exit
+      if (checkMazeExit()) {
+        gameOver = true;
+        const finalTime = formatTime(Date.now() - startTime);
+        infoElement.textContent = `🏆 ゲームクリア！タイム: ${finalTime}`;
+        controls.unlock();
+      }
+    } else {
+      // Original corridor movement
+      // Restrict forward/backward movement to the corridor
+      if (movement.forward) {
+        const newZ = controls.getObject().position.z + forward.z * moveSpeed;
+        const corridorBoundary = (currentCorridor + 1) * corridorLength - playerRadius;
+        
+        if (newZ < corridorBoundary) {
+          moveDelta.add(forward.multiplyScalar(moveSpeed));
+        }
+      }
+      
+      if (movement.backward) {
+        const newZ = controls.getObject().position.z - forward.z * moveSpeed;
+        const corridorBoundary = currentCorridor * corridorLength + playerRadius;
+        
+        if (newZ > corridorBoundary) {
+          moveDelta.sub(forward.normalize().multiplyScalar(moveSpeed));
+        }
+      }
+      
+      // Restrict left/right movement within corridor width
+      if (movement.left || movement.right) {
+        const lateralMove = right.clone().multiplyScalar(moveSpeed * (movement.right ? 1 : -1));
+        const newX = controls.getObject().position.x + lateralMove.x;
+        
+        if (Math.abs(newX) < (corridorWidth / 2 - playerRadius)) {
+          moveDelta.add(lateralMove);
+        }
+      }
+      
+      // Apply movement
+      controls.getObject().position.add(moveDelta);
+      
+      // Keep player at fixed height
+      controls.getObject().position.y = playerHeight;
+      
+      // Show decision prompt when in the decision zone
+      if (isInDecisionZone()) {
+        const currentCorridorObj = corridors[currentCorridor];
+        if (currentCorridorObj.userData.hasAnomaly) {
+          infoElement.textContent = '⚠️ 異変を検知! 「F」キー:進む / 「B」キー:引き返す';
+        } else {
+          infoElement.textContent = '✓ 通路正常 「F」キー:進む / 「B」キー:引き返す';
+        }
+      }
+      
+      // Update any dynamic anomalies
+      corridors.forEach(corridor => {
+        // Handle flickering lights
+        corridor.children.forEach(child => {
+          if (child.isLight && child.userData.flickering) {
+            child.intensity = Math.random() > 0.5 ? 1 : 0.1;
+          }
+        });
+        
+        // Remove fog when leaving corridor
+        if (corridor.userData.hasFog && 
+            Math.abs(controls.getObject().position.z - corridor.position.z) > corridorLength) {
+          scene.fog = null;
+        }
+      });
     }
-    
-    // Apply movement
-    controls.getObject().position.add(moveDelta);
-    
-    // Keep player at fixed height
-    controls.getObject().position.y = playerHeight;
     
     // Update flashlight
     lighting.updateFlashlight();
     
     // Update timer
     updateTimer();
-    
-    // Show decision prompt when in the decision zone
-    if (isInDecisionZone()) {
-      const currentCorridorObj = corridors[currentCorridor];
-      if (currentCorridorObj.userData.hasAnomaly) {
-        infoElement.textContent = '⚠️ 異変を検知! 「F」キー:進む / 「B」キー:引き返す';
-      } else {
-        infoElement.textContent = '✓ 通路正常 「F」キー:進む / 「B」キー:引き返す';
-      }
-    }
-    
-    // Update any dynamic anomalies
-    corridors.forEach(corridor => {
-      // Handle flickering lights
-      corridor.children.forEach(child => {
-        if (child.isLight && child.userData.flickering) {
-          child.intensity = Math.random() > 0.5 ? 1 : 0.1;
-        }
-      });
-      
-      // Remove fog when leaving corridor
-      if (corridor.userData.hasFog && 
-          Math.abs(controls.getObject().position.z - corridor.position.z) > corridorLength) {
-        scene.fog = null;
-      }
-    });
   }
   
   renderer.render(scene, camera);
 }
 
 // Initialize and start the game
-initializeCorridors();
-exitInfoElement.textContent = `出口番号: ${exitNumber}`;
+if (useSimpleMaze) {
+  currentMaze = initializeMaze();
+} else {
+  initializeCorridors();
+}
+exitInfoElement.textContent = useSimpleMaze ? '出口を探せ！' : `出口番号: ${exitNumber}`;
 animate();
